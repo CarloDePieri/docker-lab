@@ -1,0 +1,14 @@
+---
+services:
+  archlinux:
+    build: .
+    image: dl_archlinux
+    container_name: dl_archlinux
+    hostname: dl_archlinux
+    network_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - ./data:/data
+    command: ""
+    privileged: True
+    restart: unless-stopped

@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+#
+# dlab: quickly manage my containers for testing purpose.
+#
+import textwrap
+import typer
+import subprocess
+from os import walk
+from os.path import realpath, abspath, dirname, join, isfile
+from typing import List
+
+
+def _is_container_up(name) -> bool:
+    stdout = subprocess.run(["docker", "ps"], capture_output=True).stdout
+    return stdout.decode("utf-8").find(f"dl_{name}") >= 0
+
+
+def _is_container_there(name) -> bool:
+    stdout = subprocess.run(["docker", "ps", "-a"], capture_output=True).stdout
+    return stdout.decode("utf-8").find(f"dl_{name}") >= 0
+
+
+def _run(command: str, root: str) -> None:
+    subprocess.run(command.split(" "), cwd=root)
+
+
+def _is_ctx(name: str) -> bool:
+    return isfile(join(containers_dir, name, "docker-compose.yml"))
+    return True
+
+
+def _get_containers() -> List[str]:
+    return next(walk(containers_dir))[1]
+
+
+def _get_container_status(name: str) -> str:
+    if _is_container_up(name):
+        status = "running"
+    elif _is_container_there(name):
+        status = "stopped"
+    else:
+        status = "down"
+    return status
+
+
+def make_error(text: str):
+    return typer.style(text, fg=typer.colors.RED, bold=True)
+
+
+error = make_error(" [ERR]")
+
+app = typer.Typer(add_completion=False)
+app_exec = realpath(abspath(__file__))
+app_dir = dirname(app_exec)
+containers_dir = join(app_dir, "containers")
+
+
+@app.callback()
+def main():
+    """
+    Quickly manage some ephemeral containers for testing purpose.
+    """
+
+
+def add_group_cmd(name: str):
+
+    group = typer.Typer(add_completion=False)
+    app.add_typer(group, name=name)
+    group_root = join(containers_dir, name)
+
+    def _get_ctx_id() -> str:
+        stdout = subprocess.run(["docker-compose", "ps", "-q"],
+                                cwd=group_root, capture_output=True).stdout
+        return stdout.decode("utf-8")[:-1]
+
+    @group.command("up")
+    def ctx_up():
+        _run("docker-compose up -d", root=group_root)
+    ctx_up.__doc__ = f"""
+        Create and run the {name} container.
+        """
+
+    @group.command("shell")
+    def ctx_shell():
+        if not _is_container_up(name):
+            ctx_up()
+        _run(f"docker-compose exec {name} bash", root=group_root)
+    ctx_shell.__doc__ = f"""
+        Open a shell in the {name} container.
+
+        Create one if it's not already up.
+        """
+
+    @group.command("down")
+    def ctx_down():
+        _run("docker-compose down", root=group_root)
+    ctx_down.__doc__ = f"""
+        Delete the {name} container.
+        """
+
+    @group.command("start")
+    def ctx_start():
+        _run("docker-compose start", root=group_root)
+    ctx_start.__doc__ = f"""
+        Start the {name} container.
+        """
+
+    @group.command("stop")
+    def ctx_stop():
+        _run("docker-compose stop", root=group_root)
+    ctx_stop.__doc__ = f"""
+        Stop the {name} container.
+        """
+
+    @group.command("reset")
+    def ctx_reset():
+        ctx_down()
+        ctx_up()
+    ctx_reset.__doc__ = f"""
+    Reset the {name} container by destroying and then recreating it.
+    """
+
+    @group.command("info")
+    def ctx_info():
+        info = textwrap.dedent(
+            f"""
+        Data: {group_root}/data/
+        Config: {group_root}/docker-compose.yml
+        """)
+        typer.echo(info)
+    ctx_info.__doc__ = f"""
+    Print the {name} container info.
+    """
+
+    @group.command("cp")
+    def ctx_cp(
+            src: str = typer.Argument(..., help="The source path"),
+            dest: str = typer.Argument(..., help="The destination path")):
+        id = _get_ctx_id()
+        if src[:2] == "@:":
+            _run(f"docker cp {id}:{src[2:]} {dest}", root=group_root)
+        elif dest[:2] == "@:":
+            _run(f"docker cp {src} {id}:{dest[2:]}", root=group_root)
+        else:
+            typer.echo("")
+            typer.echo(f"{error} Wrong format, check --help!")
+            typer.echo("")
+            typer.Exit(1)
+    ctx_cp.__doc__ = f"""
+    Copy file to/from the {name} container.
+
+    The symbol @ will represent the container id, so the two arguments can
+    be expressed as either:
+
+    LOCAL_SRC @:CONTAINER_DEST (will copy TO the container)
+
+    @:CONTAINER_SRC LOCAL_DEST (will copy FROM the container)
+
+    If SRC name starts with '@:' use an absolute path instead.
+    """
+
+    @group.command("exec")
+    def ctx_exec(cmd: str = typer.Argument(..., help="The command to be run")):
+        id = _get_ctx_id()
+        _run(f"docker exec -it {id} {cmd}", root=group_root)
+    ctx_exec.__doc__ = f"""
+    Execute a command inside the {name} container.
+
+    Make sure to surround CMD with double quotes, like this: \"ls /\"
+    """
+
+    @group.callback()
+    def ctx_main():
+        pass
+    ctx_main.__doc__ = f"""
+    Manage the {name} container.
+    """
+
+
+# Add all available containers commands
+for ctx in _get_containers():
+    if _is_ctx(ctx):
+        add_group_cmd(ctx)
+
+
+@app.command("ps")
+def status():
+    """
+    Print all managed containers status.
+    """
+    typer.echo("")
+    typer.echo("      Available containers")
+    typer.echo(" ------------------------------")
+    for ctx in _get_containers():
+
+        status = _get_container_status(ctx)
+
+        if status == "running":
+            status = typer.style(status, fg=typer.colors.GREEN, bold=True)
+        elif status == "stopped":
+            status = typer.style(status, fg=typer.colors.YELLOW, bold=True)
+        else:
+            status = "   " + typer.style(status, fg=typer.colors.RED, bold=True)
+
+        if len(ctx) < 8:
+            tabs = "\t\t"
+        elif len(ctx) < 16:
+            tabs = "\t"
+        elif len(ctx) < 24:
+            tabs = ""
+        else:
+            ctx = ctx[:20] + "..."
+            tabs = ""
+        typer.echo(f" {ctx}{tabs}\t{status}")
+    typer.echo("")
+
+
+if __name__ == "__main__":
+    app()

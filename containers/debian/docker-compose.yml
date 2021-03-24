@@ -1,0 +1,14 @@
+---
+services:
+  debian:
+    build: .
+    image: dl_debian
+    container_name: dl_debian
+    hostname: dl_debian
+    network_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - ./data:/data
+    command: ""
+    privileged: True
+    restart: unless-stopped
