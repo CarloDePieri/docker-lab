@@ -5,7 +5,7 @@ LABEL maintainer="depieri.carlo@gmail.com"
 SHELL ["/bin/bash", "-c"]
 
 # Install python & pip
-RUN pacman -Syu python python-pip --noconfirm && \
+RUN pacman -Syu python python-pip git --noconfirm && \
 yes | pacman -Scc
 
 # Upgrade pip to latest version.
