@@ -31,8 +31,5 @@ rm -f /lib/systemd/system/sockets.target.wants/*initctl*; \
 rm -f /lib/systemd/system/basic.target.wants/*;\
 rm -f /lib/systemd/system/anaconda.target.wants/*;
 
-# Prepare the cgroup volume
-VOLUME [ "/sys/fs/cgroup" ]
-
 # Start systemd at init
 CMD ["/lib/systemd/systemd"]

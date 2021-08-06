@@ -11,8 +11,5 @@ yes | pacman -Scc
 # Upgrade pip to latest version.
 RUN pip install --upgrade pip
 
-# Prepare the cgroup volume
-VOLUME [ "/sys/fs/cgroup" ]
-
 # Start systemd at init
 CMD ["/lib/systemd/systemd"]
